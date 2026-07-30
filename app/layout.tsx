@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "agents-101",
-  description: "Aprende a construir agentes de IA con el AI SDK + Next.js",
+  title: "Panel de agentes",
+  description: "Maker 3D y consultoría contable con agentes de IA",
 };
 
 export default function RootLayout({

@@ -1,25 +1,38 @@
+import Link from "next/link";
+
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <div className="max-w-xl text-center">
-        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          agents-101
-        </h1>
-        <p className="mt-3 text-sm text-foreground/70 sm:text-base">
-          Scaffold listo. Próximo paso: conectar el AI SDK y construir el
-          agente.
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-8 p-8">
+      <header className="flex flex-col gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight">Panel de agentes</h1>
+        <p className="text-sm text-foreground/60">
+          Dos áreas independientes: maker 3D / Amazon y consultoría contable por cliente.
         </p>
-      </div>
+      </header>
 
-      <ol className="list-decimal space-y-1 text-sm text-foreground/80 sm:text-base">
-        <li>
-          Copia <code className="rounded bg-foreground/10 px-1.5 py-0.5">.env.local.example</code>{" "}
-          a <code className="rounded bg-foreground/10 px-1.5 py-0.5">.env.local</code> y agrega tu{" "}
-          <code className="rounded bg-foreground/10 px-1.5 py-0.5">GOOGLE_GENERATIVE_AI_API_KEY</code>.
-        </li>
-        <li>Crea el route handler en <code className="rounded bg-foreground/10 px-1.5 py-0.5">app/api/chat/route.ts</code>.</li>
-        <li>Conecta la UI con <code className="rounded bg-foreground/10 px-1.5 py-0.5">useChat</code>.</li>
-      </ol>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link
+          href="/maker"
+          className="flex flex-col gap-2 rounded-xl border border-foreground/15 p-5 transition-colors hover:bg-foreground/5"
+        >
+          <span className="text-lg font-medium">Maker 3D</span>
+          <span className="text-sm text-foreground/60">
+            Diseño, modelado en línea (imagen o idea → STL), calibraciones Bambu Lab,
+            filamentos, impresión y listados Amazon.
+          </span>
+        </Link>
+
+        <Link
+          href="/consultoria"
+          className="flex flex-col gap-2 rounded-xl border border-foreground/15 p-5 transition-colors hover:bg-foreground/5"
+        >
+          <span className="text-lg font-medium">Consultoría contable</span>
+          <span className="text-sm text-foreground/60">
+            Clientes de contabilidad y cuentas por pagar. Baltimore y futuros clientes,
+            cada uno con su agente y bandeja.
+          </span>
+        </Link>
+      </div>
     </main>
   );
 }
