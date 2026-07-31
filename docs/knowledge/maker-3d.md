@@ -84,6 +84,28 @@ Referencia interna para consultas sobre impresoras Bambu Lab, materiales, perfil
 
 ---
 
+## Rutas en Bambu Studio — dónde cambiar cada ajuste
+
+Referencia rápida para diagnóstico visual (agente Maker):
+
+| Ajuste | Ruta en Bambu Studio |
+|--------|---------------------|
+| Temperatura nozzle / cama | Filament → seleccionar filamento → Nozzle / Bed |
+| Altura de capa | Quality → Layer height |
+| Perímetros / paredes | Strength → Wall loops (perimeters) |
+| Velocidad exterior | Speed → Outer wall |
+| Velocidad primera capa | Speed → Initial layer |
+| Ventilación | Filament → Cooling → Fan speed |
+| Seam (costura) | Quality → Seam position → Nearest / Back |
+| Retraction | Filament → Retraction |
+| Brim / raft | Support → Brim type / width |
+| Calibración flujo | Device → Calibration → Flow rate |
+| Nivelación cama | Device → Calibration → Bed level |
+| Aceleración | Speed → Acceleration |
+| Purga multicolor | Filament → Flush volumes (AMS) |
+
+---
+
 ## Troubleshooting frecuente
 
 ### Warping (esquinas levantadas)

@@ -1,8 +1,8 @@
-import { ChatPanel } from "@/components/chat-panel";
+import { MakerChatPanel } from "@/components/maker-chat-panel";
 
 export default function MakerPage() {
   return (
-    <ChatPanel
+    <MakerChatPanel
       title="Maker 3D — Diseño e impresión"
       api="/api/chat/maker"
       backHref="/"

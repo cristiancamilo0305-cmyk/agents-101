@@ -1,4 +1,5 @@
-import { google } from "@ai-sdk/google";
+import { formatChatError } from "@/lib/format-chat-error";
+import { getChatModel } from "@/lib/chat-model";
 import {
   convertToModelMessages,
   stepCountIs,
@@ -11,12 +12,12 @@ export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
 
   const result = streamText({
-    model: google("gemini-flash-latest"),
+    model: getChatModel(),
     system: BALTIMORE_SYSTEM_PROMPT,
     messages: await convertToModelMessages(messages),
     stopWhen: stepCountIs(5),
     tools: baltimoreAgentTools,
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({ onError: formatChatError });
 }
