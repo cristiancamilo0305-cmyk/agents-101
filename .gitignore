@@ -28,6 +28,11 @@ yarn-error.log*
 .env*.local
 .env
 
+# datos confidenciales de clientes (nunca a git)
+/data/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.vercel
+.env*

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { exchangeCodeForTokens } from "@/lib/google-oauth";
-import { cookieOptions } from "@/lib/gmail-auth";
+import { cookieOptions, saveRefreshTokenToDisk } from "@/lib/gmail-auth";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -30,6 +30,7 @@ export async function GET(req: Request) {
       ...cookieOptions,
       maxAge: 60 * 60 * 24 * 30,
     });
+    await saveRefreshTokenToDisk(tokens.refresh_token);
   }
 
   return response;

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Panel de agentes",
-  description: "Maker 3D y consultoría contable con agentes de IA",
+  title: "Bruna by Libor — Maker 3D",
+  description: "Diseño, diagnóstico e impresión 3D con IA para la marca Bruna by Libor",
 };
 
 export default function RootLayout({

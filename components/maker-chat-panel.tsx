@@ -3,7 +3,6 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isToolUIPart } from "ai";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { MakerChatUIMessage } from "@/app/api/chat/maker/agent";
 
@@ -12,15 +11,17 @@ const MAX_FILE_MB = 5;
 type MakerChatPanelProps = {
   title: string;
   api: string;
-  backHref?: string;
-  backLabel?: string;
+  description?: string;
+  placeholder?: string;
+  defaultPrompt?: string;
 };
 
 export function MakerChatPanel({
   title,
   api,
-  backHref = "/",
-  backLabel = "← Inicio",
+  description = "Sube una foto de tu pieza impresa para diagnóstico visual + ajustes en Bambu Studio.",
+  placeholder = "Describe el filamento o el problema…",
+  defaultPrompt = "Analiza esta foto de mi impresión 3D. Identifica el defecto y dime qué ajustar en Bambu Studio (temperaturas, velocidades, seam, ventilación, etc.).",
 }: MakerChatPanelProps) {
   const [input, setInput] = useState("");
   const [files, setFiles] = useState<FileList | undefined>(undefined);
@@ -74,9 +75,7 @@ export function MakerChatPanel({
     if (!text && !files?.length) return;
 
     const filesToSend = files;
-    const prompt =
-      text ||
-      "Analiza esta foto de mi impresión 3D. Identifica el defecto y dime qué ajustar en Bambu Studio (temperaturas, velocidades, seam, ventilación, etc.).";
+    const prompt = text || defaultPrompt;
 
     try {
       await sendMessage({
@@ -98,15 +97,8 @@ export function MakerChatPanel({
     <main className="flex min-h-screen flex-col items-center p-8">
       <div className="flex w-full max-w-xl flex-1 flex-col gap-4 pb-36">
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            <Link href={backHref} className="shrink-0 text-sm underline text-foreground/70">
-              {backLabel}
-            </Link>
-          </div>
-          <p className="text-sm text-foreground/60">
-            Sube una foto de tu pieza impresa para diagnóstico visual + ajustes en Bambu Studio.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          <p className="text-sm text-foreground/60">{description}</p>
         </div>
 
         <div className="flex flex-1 flex-col gap-3">
@@ -115,8 +107,8 @@ export function MakerChatPanel({
               key={message.id}
               className={
                 message.role === "user"
-                  ? "self-end max-w-[95%] rounded-lg bg-foreground/10 px-3 py-2 text-sm"
-                  : "self-start max-w-[95%] rounded-lg bg-foreground/5 px-3 py-2 text-sm"
+                  ? "self-end max-w-[95%] rounded-lg border border-foreground/10 bg-background/80 px-3 py-2 text-sm shadow-sm backdrop-blur-sm"
+                  : "self-start max-w-[95%] rounded-lg border border-foreground/10 bg-background/60 px-3 py-2 text-sm shadow-sm backdrop-blur-sm"
               }
             >
               {message.parts.map((part, i) => {
@@ -151,7 +143,7 @@ export function MakerChatPanel({
 
         {previewUrl && (
           <div className="fixed bottom-28 left-1/2 w-full max-w-xl -translate-x-1/2 px-4">
-            <div className="flex items-center gap-2 rounded-lg border border-foreground/15 bg-background p-2 shadow-sm">
+            <div className="flex items-center gap-2 rounded-lg border border-foreground/15 bg-background/90 p-2 shadow-md backdrop-blur-md">
               <img
                 src={previewUrl}
                 alt="Vista previa"
@@ -176,7 +168,7 @@ export function MakerChatPanel({
         )}
 
         <form
-          className="fixed bottom-0 left-0 flex w-full flex-col items-center gap-2 bg-background p-4"
+          className="fixed bottom-0 left-0 flex w-full flex-col items-center gap-2 border-t border-foreground/10 bg-background/85 p-4 shadow-[0_-4px_16px_rgba(0,0,0,0.04)] backdrop-blur-md"
           onSubmit={handleSubmit}
         >
           {fileError && (
@@ -203,7 +195,7 @@ export function MakerChatPanel({
             <input
               className="min-w-0 flex-1 rounded-lg border border-foreground/20 px-3 py-2 text-sm shadow-sm"
               value={input}
-              placeholder="Describe el filamento o el problema…"
+              placeholder={placeholder}
               disabled={busy}
               onChange={(e) => setInput(e.currentTarget.value)}
             />

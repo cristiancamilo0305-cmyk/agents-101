@@ -1,11 +1,13 @@
 import type { InferUITools, ToolSet, UIDataTypes, UIMessage } from "ai";
 import { createResearchDocsTool } from "@/lib/tools/research-docs-tool";
+import { filamentRecommenderTool } from "@/lib/tools/filament-recommender-tool";
 
 export const makerAgentTools = {
   research_docs: createResearchDocsTool(
     "docs/knowledge/maker-3d.md",
     "Consulta la base de conocimiento Maker: impresión 3D, diseño, modelado en línea (imagen/texto a STL), calibraciones Bambu Lab, filamentos y Amazon.",
   ),
+  recommend_filament: filamentRecommenderTool,
 } satisfies ToolSet;
 
 export type MakerChatUITools = InferUITools<typeof makerAgentTools>;
@@ -36,4 +38,8 @@ Cuando recibas una imagen de impresión:
 4. Si falta filamento/material, pregunta (PLA mate, PETG, etc.) pero da recomendaciones provisionales para PLA en A1 Combo.
 5. Usa research_docs para cruzar con la base de conocimiento antes de cerrar el diagnóstico.
 
-Metodología ReAct: razona paso a paso, usa "research_docs" cuando necesites datos concretos, observa el resultado y responde con claridad. No inventes specs que no aparezcan en la base de conocimiento.`;
+## Recomendación de filamento
+
+Cuando el usuario pregunte qué filamento usar para una pieza o diseño nuevo (o describa una pieza sin decir el material), usa la tool "recommend_filament" en vez de adivinar. Pásale el tipo de pieza, uso, acabado deseado, si va a exterior, esfuerzo mecánico y si necesita ser flexible (los que apliquen). Presenta la recomendación principal con sus ajustes de Bambu Studio y menciona alternativas solo si aportan valor.
+
+Metodología ReAct: razona paso a paso, usa "research_docs" o "recommend_filament" cuando necesites datos concretos, observa el resultado y responde con claridad. No inventes specs que no aparezcan en la base de conocimiento.`;

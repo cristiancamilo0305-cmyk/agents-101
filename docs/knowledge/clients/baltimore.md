@@ -72,8 +72,9 @@ Referencia interna para consultoría contable de Cristian con el cliente **Balti
 
 ## Herramientas en esta plataforma
 
-- **Chat (este agente):** procedimientos, reglas, consultas sobre procesos de Baltimore.
-- **Bandeja Gmail:** `/consultoria/baltimore/gmail` — conectar Gmail, clasificar correos no leídos, marcar no relevantes como leídos.
+- **Chat (este agente):** procedimientos, reglas, consultas sobre procesos de Baltimore. También responde preguntas de SAP en vivo (ver abajo).
+- **Bandeja Gmail:** `/consultoria/baltimore/gmail` — conectar Gmail, clasificar correos no leídos, marcar no relevantes como leídos. Para cualquier correo que en el fondo pida conciliar un pago o saber qué facturas lo integran (sin importar la categoría: solicitud_pago, mencion_directa, etc.), si se identifica proveedor y fecha, prepara automáticamente un borrador de respuesta con el desglose de facturas (sin enviarlo). Si el proveedor no calza por nombre, busca en el historial de correos del remitente qué facturas ha mencionado antes y las cruza contra SAP para inferir el proveedor real.
+- **Datos SAP en vivo:** siempre se lee el archivo `SAP*.xlsx` más reciente en la carpeta local **"Baltimore - SAP"**, sincronizada por Google Drive Desktop (no una copia congelada en el repo). Columnas clave: `Name` (proveedor), `Reference` (factura), `Total amount`/`Currency`, `WF Step Description` (estatus del flujo de aprobación; "WF finished" = terminado), `Clearing Date`/`Clearing Document` (cuándo y con qué documento se liquidó el pago).
 
 ---
 

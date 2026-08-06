@@ -7,6 +7,7 @@ export default function BaltimorePage() {
       api="/api/chat/consultoria/baltimore"
       backHref="/consultoria"
       backLabel="← Clientes"
+      accent="blue"
       headerLinks={[
         {
           href: "/consultoria/baltimore/gmail",
