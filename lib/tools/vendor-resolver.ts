@@ -41,6 +41,26 @@ function buildReferenceIndex(rows: SapRow[]): Map<string, SapRow[]> {
   return index;
 }
 
+/** Solo los dígitos, sin ceros a la izquierda — mismo criterio que en statement-reconciliation.ts,
+ *  para cuando la factura declarada trae un prefijo de letras distinto al capturado en SAP. */
+function digitsOnly(text: string): string {
+  const digits = text.replace(/\D/g, "").replace(/^0+/, "");
+  return digits || "0";
+}
+
+function buildDigitsIndex(rows: SapRow[]): Map<string, SapRow[]> {
+  const index = new Map<string, SapRow[]>();
+  for (const row of rows) {
+    if (!row.reference) continue;
+    const key = digitsOnly(row.reference);
+    if (key.length < 3) continue;
+    const list = index.get(key);
+    if (list) list.push(row);
+    else index.set(key, [row]);
+  }
+  return index;
+}
+
 function resolveVendorFromMessages(messages: GmailMessageSummary[], rows: SapRow[]): string | null {
   const referenceIndex = buildReferenceIndex(rows);
   const vendorCounts = new Map<string, number>();
@@ -66,11 +86,14 @@ function resolveVendorFromMessages(messages: GmailMessageSummary[], rows: SapRow
  */
 export function resolveVendorFromReferenceList(references: string[], rows: SapRow[]): string | null {
   const referenceIndex = buildReferenceIndex(rows);
+  const digitsIndex = buildDigitsIndex(rows);
   const vendorCounts = new Map<string, number>();
 
   for (const reference of references) {
     const key = reference.replace(/\s+/g, "").toUpperCase();
-    const matches = referenceIndex.get(key);
+    // Se prueba primero la referencia exacta; solo si no hay nada se recurre a solo-dígitos (el
+    // mismo proveedor puede capturar sus facturas en SAP con o sin el prefijo de letras).
+    const matches = referenceIndex.get(key) ?? digitsIndex.get(digitsOnly(reference));
     if (!matches) continue;
     for (const match of matches) {
       vendorCounts.set(match.vendorName, (vendorCounts.get(match.vendorName) ?? 0) + 1);

@@ -87,7 +87,11 @@ export async function extractStatementInvoices(
   > = [
     {
       type: "text",
-      text: `Este es un estado de cuenta o relación de facturas pendientes de pago enviado por un proveedor. Extrae cada factura mencionada como pendiente de pago (número/folio, monto, moneda si se indica, fecha si se indica), y si es posible identifica el nombre del proveedor que envía el estado de cuenta. No inventes datos que no aparezcan.
+      text: `Este es un estado de cuenta o relación de facturas pendientes de pago enviado por un proveedor a su cliente "Baltimore" (o "Baltimore Aircoil Company de México"). Extrae cada factura mencionada como pendiente de pago (número/folio, monto, moneda si se indica, fecha si se indica), y si es posible identifica el nombre del proveedor que envía el estado de cuenta.
+
+IMPORTANTE sobre "proveedorDeclarado": es quien EMITE el estado de cuenta (a quién se le debe pagar), nunca "Baltimore" / "Baltimore Aircoil" — ese es el cliente que RECIBE el estado de cuenta y aparece mencionado en el encabezado o asunto, pero NUNCA es el proveedor. Si el único nombre de proveedor que identificas es una variante de "Baltimore", deja "proveedorDeclarado" vacío en vez de poner "Baltimore".
+
+No inventes datos que no aparezcan.
 
 Cuerpo del correo:
 ${bodyText || "(sin texto relevante en el cuerpo)"}`,
@@ -120,6 +124,12 @@ ${bodyText || "(sin texto relevante en el cuerpo)"}`,
     output: Output.object({ schema: statementSchema }),
     messages: [{ role: "user", content: contentParts }],
   });
+
+  // Respaldo por si el modelo confunde al cliente ("Baltimore") con el proveedor a pesar de la
+  // instrucción — nunca es válido como proveedorDeclarado.
+  if (output.proveedorDeclarado && /baltimore/i.test(output.proveedorDeclarado)) {
+    output.proveedorDeclarado = undefined;
+  }
 
   return output;
 }
