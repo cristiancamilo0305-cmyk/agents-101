@@ -10,6 +10,16 @@ function normalize(text: string): string {
     .trim();
 }
 
+/** Como normalize(), pero también quita comas y puntos — para comparar razón social, donde el
+ *  proveedor declarado (vía IA) y el capturado en SAP casi nunca puntúan igual (ej. "TISAL 4850,
+ *  S.A. DE C.V." vs "TISAL 4850 S.A. DE C.V."). Solo para comparar, nunca para mostrar en pantalla. */
+function normalizeVendorName(text: string): string {
+  return normalize(text)
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function normalizeRef(text: string): string {
   return text.replace(/\s+/g, "").toUpperCase();
 }
@@ -42,39 +52,58 @@ export type InvoiceReconciliation = {
 
 const AMOUNT_TOLERANCE = 0.5;
 
+/**
+ * Busca la factura en SAP por referencia exacta y, si no aparece, por solo-dígitos (para
+ * capturas sin el prefijo de letras). El match por solo-dígitos es mucho más propenso a chocar
+ * con la factura de OTRO proveedor que casualmente comparte los mismos números — así que cuando
+ * se conoce el proveedor, un candidato de otro proveedor se descarta en vez de usarse "por
+ * default"; nunca se mezcla el lote/fecha de pago de un proveedor con la factura de otro.
+ */
 function findSapMatch(rows: SapRow[], numero: string, vendorHint: string | null): SapRow | undefined {
   const key = normalizeRef(numero);
-  let candidates = rows.filter((r) => normalizeRef(r.reference) === key);
+  const vendorKey = vendorHint ? normalizeVendorName(vendorHint) : null;
+  const matchesVendor = (r: SapRow) =>
+    !vendorKey || normalizeVendorName(r.vendorName).includes(vendorKey) || vendorKey.includes(normalizeVendorName(r.vendorName));
 
-  if (candidates.length === 0) {
-    const numKey = digitsOnly(numero);
-    if (numKey.length >= MIN_DIGITS_FOR_FALLBACK) {
-      candidates = rows.filter((r) => r.reference && digitsOnly(r.reference) === numKey);
-    }
+  const exact = rows.filter((r) => normalizeRef(r.reference) === key);
+  const exactForVendor = exact.filter(matchesVendor);
+  if (exactForVendor.length > 0) return exactForVendor[0];
+  if (!vendorKey && exact.length > 0) return exact[0];
+
+  const numKey = digitsOnly(numero);
+  if (numKey.length >= MIN_DIGITS_FOR_FALLBACK) {
+    const fuzzy = rows.filter((r) => r.reference && digitsOnly(r.reference) === numKey);
+    const fuzzyForVendor = fuzzy.filter(matchesVendor);
+    if (fuzzyForVendor.length > 0) return fuzzyForVendor[0];
+    if (!vendorKey && fuzzy.length === 1) return fuzzy[0];
   }
 
-  if (candidates.length === 0) return undefined;
-  if (!vendorHint) return candidates[0];
-
-  const vendorKey = normalize(vendorHint);
-  return (
-    candidates.find((r) => normalize(r.vendorName).includes(vendorKey) || vendorKey.includes(normalize(r.vendorName))) ??
-    candidates[0]
-  );
+  return undefined;
 }
 
-function findSatMatch(satRows: SatRow[], numero: string): SatRow | undefined {
+/** Misma lógica de no-mezclar-proveedores que findSapMatch, comparando contra el emisor del CFDI. */
+function findSatMatch(satRows: SatRow[], numero: string, vendorHint: string | null): SatRow | undefined {
   const key = normalizeRef(numero);
-  const exact = satRows.find(
-    (r) => normalizeRef(r.folio) === key || (r.referencia && normalizeRef(r.referencia) === key),
-  );
-  if (exact) return exact;
+  const vendorKey = vendorHint ? normalizeVendorName(vendorHint) : null;
+  const matchesVendor = (r: SatRow) =>
+    !vendorKey ||
+    normalizeVendorName(r.razonSocialEmisor).includes(vendorKey) ||
+    vendorKey.includes(normalizeVendorName(r.razonSocialEmisor));
+
+  const exact = satRows.filter((r) => normalizeRef(r.folio) === key || (r.referencia && normalizeRef(r.referencia) === key));
+  const exactForVendor = exact.filter(matchesVendor);
+  if (exactForVendor.length > 0) return exactForVendor[0];
+  if (!vendorKey && exact.length > 0) return exact[0];
 
   const numKey = digitsOnly(numero);
   if (numKey.length < MIN_DIGITS_FOR_FALLBACK) return undefined;
-  return satRows.find(
+  const fuzzy = satRows.filter(
     (r) => (r.folio && digitsOnly(r.folio) === numKey) || (r.referencia && digitsOnly(r.referencia) === numKey),
   );
+  const fuzzyForVendor = fuzzy.filter(matchesVendor);
+  if (fuzzyForVendor.length > 0) return fuzzyForVendor[0];
+  if (!vendorKey && fuzzy.length === 1) return fuzzy[0];
+  return undefined;
 }
 
 /**
@@ -90,7 +119,7 @@ export function reconcileClaimedInvoices(
 ): InvoiceReconciliation[] {
   return claimed.map((c) => {
     const sapMatch = findSapMatch(rows, c.numero, vendorHint);
-    const satMatch = findSatMatch(satRows, c.numero);
+    const satMatch = findSatMatch(satRows, c.numero, vendorHint);
     const pagada = Boolean(sapMatch?.clearingDocument);
     const canceladaEnSat = normalize(satMatch?.estatusSat ?? "") === "cancelado";
 
