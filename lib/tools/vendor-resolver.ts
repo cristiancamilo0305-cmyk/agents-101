@@ -61,6 +61,27 @@ function resolveVendorFromMessages(messages: GmailMessageSummary[], rows: SapRow
 }
 
 /**
+ * Igual que resolveVendorFromMessages pero a partir de una lista de números de factura ya
+ * conocidos (ej. extraídos de un estado de cuenta), sin tener que volver a extraerlos de texto libre.
+ */
+export function resolveVendorFromReferenceList(references: string[], rows: SapRow[]): string | null {
+  const referenceIndex = buildReferenceIndex(rows);
+  const vendorCounts = new Map<string, number>();
+
+  for (const reference of references) {
+    const key = reference.replace(/\s+/g, "").toUpperCase();
+    const matches = referenceIndex.get(key);
+    if (!matches) continue;
+    for (const match of matches) {
+      vendorCounts.set(match.vendorName, (vendorCounts.get(match.vendorName) ?? 0) + 1);
+    }
+  }
+
+  if (vendorCounts.size === 0) return null;
+  return [...vendorCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+/**
  * Cuando el proveedor no se encuentra por nombre (ej. el remitente escribe desde el dominio
  * de su empresa pero en SAP está registrado con otro nombre/razón social), busca en el
  * historial de correos de ese remitente qué números de factura ha mencionado antes y los

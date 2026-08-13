@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
 import { getValidAccessToken } from "@/lib/gmail-auth";
-import { createReplyDraft, extractEmail, getMessageBody, listUnreadMessages } from "@/lib/gmail";
+import {
+  createReplyDraft,
+  extractAllEmails,
+  extractEmail,
+  getAttachmentBytes,
+  getMessageBody,
+  getMessageWithAttachments,
+  getMyEmailAddress,
+  getRecipients,
+  listUnreadMessages,
+  threadHasDraft,
+} from "@/lib/gmail";
 import { classifyEmails, extractPaymentDetailsFromBody, hasImportantKeyword } from "@/lib/tools/email-classifier";
 import {
   formatPaymentSummaryEmail,
@@ -9,12 +20,21 @@ import {
   resolveVendorByAmountAndDate,
   type SapRow,
 } from "@/lib/tools/sap-data";
+import { loadSatRows, type SatRow } from "@/lib/tools/sat-data";
 import {
   extractAmountCandidates,
   findVendorMentionInThread,
+  resolveVendorFromReferenceList,
   resolveVendorFromSenderHistory,
   resolveVendorFromThreadReferences,
 } from "@/lib/tools/vendor-resolver";
+import { extractStatementInvoices, type AttachmentPayload } from "@/lib/tools/statement-extraction";
+import {
+  reconcileClaimedInvoices,
+  formatStatementReconciliationEmail,
+  formatStatementReconciliationEmailHtml,
+  type InvoiceReconciliation,
+} from "@/lib/tools/statement-reconciliation";
 import type { GmailMessageSummary } from "@/lib/gmail";
 
 async function resolvePayment(
@@ -68,11 +88,72 @@ async function resolvePayment(
   return null;
 }
 
+const ATTACHMENT_MIME_ALLOW = /^(application\/pdf|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml|text\/csv|image\/)/;
+
+/**
+ * Descarga y analiza el estado de cuenta de un proveedor (adjunto Excel/PDF o imagen en el
+ * cuerpo), lo concilia contra SAP y SAT, y prepara un borrador de respuesta con la tabla de
+ * hallazgos, copiando a todos los que ya estaban en el correo. Nunca envía el borrador.
+ */
+async function analizarEstadoDeCuenta(
+  accessToken: string,
+  email: GmailMessageSummary,
+  myEmail: string,
+  getSapRows: () => Promise<SapRow[]>,
+  getSatRows: () => Promise<SatRow[]>,
+): Promise<{ borrador?: { id: string; preview: string }; conciliacion?: InvoiceReconciliation[] }> {
+  // Evita re-analizar y duplicar el borrador si ya se generó uno en una corrida anterior del triaje.
+  if (await threadHasDraft(accessToken, email.threadId)) return {};
+
+  const { bodyText, attachments } = await getMessageWithAttachments(accessToken, email.id);
+
+  const relevantRefs = attachments.filter((a) => ATTACHMENT_MIME_ALLOW.test(a.mimeType));
+  const payloads: AttachmentPayload[] = [];
+  for (const ref of relevantRefs) {
+    const data = await getAttachmentBytes(accessToken, email.id, ref.attachmentId);
+    payloads.push({ ...ref, data });
+  }
+
+  if (payloads.length === 0 && !bodyText.trim()) return {};
+
+  const extraccion = await extractStatementInvoices(bodyText, payloads);
+  if (extraccion.facturas.length === 0) return {};
+
+  const [rows, satRows] = await Promise.all([getSapRows(), getSatRows()]);
+
+  let vendorHint = extraccion.proveedorDeclarado ?? null;
+  if (!vendorHint) {
+    vendorHint = resolveVendorFromReferenceList(
+      extraccion.facturas.map((f) => f.numero),
+      rows,
+    );
+  }
+  if (!vendorHint) {
+    vendorHint = await findVendorMentionInThread(accessToken, email.threadId, rows);
+  }
+  if (!vendorHint && !/@baltimoreaircoil\.com$/i.test(extractEmail(email.from))) {
+    vendorHint = await resolveVendorFromSenderHistory(accessToken, email.from, rows);
+  }
+
+  const conciliacion = reconcileClaimedInvoices(rows, satRows, vendorHint, extraccion.facturas);
+  const preview = formatStatementReconciliationEmail(vendorHint, conciliacion);
+  const htmlBody = formatStatementReconciliationEmailHtml(vendorHint, conciliacion);
+
+  const { to, cc } = await getRecipients(accessToken, email.id);
+  const ccList = [...extractAllEmails(to), ...extractAllEmails(cc)].filter(
+    (addr) => addr.toLowerCase() !== myEmail.toLowerCase(),
+  );
+
+  const draft = await createReplyDraft(accessToken, email, htmlBody, ccList, "text/html");
+  return { borrador: { id: draft.id, preview }, conciliacion };
+}
+
 export async function POST() {
-  const accessToken = await getValidAccessToken();
-  if (!accessToken) {
+  const validToken = await getValidAccessToken();
+  if (!validToken) {
     return NextResponse.json({ error: "not_connected" }, { status: 401 });
   }
+  const accessToken: string = validToken;
 
   const emails = await listUnreadMessages(accessToken, 50);
   const clasificaciones = await classifyEmails(emails);
@@ -82,6 +163,18 @@ export async function POST() {
     if (!sapRows) sapRows = (await loadSapRows()).rows;
     return sapRows;
   }
+  let satRows: SatRow[] | null = null;
+  async function getSatRows(): Promise<SatRow[]> {
+    if (!satRows) satRows = (await loadSatRows()).rows;
+    return satRows;
+  }
+  let myEmail: string | null = null;
+  async function getMyEmail(): Promise<string> {
+    if (myEmail) return myEmail;
+    const resolved = await getMyEmailAddress(accessToken);
+    myEmail = resolved;
+    return resolved;
+  }
 
   const results = await Promise.all(
     emails.map(async (email) => {
@@ -89,7 +182,23 @@ export async function POST() {
       const importante = hasImportantKeyword(email);
 
       let borrador: { id: string; preview: string } | undefined;
-      if (clasificacion?.necesita_detalle_pago) {
+      let conciliacion: InvoiceReconciliation[] | undefined;
+
+      if (clasificacion?.categoria === "estado_cuenta_proveedor") {
+        try {
+          const resultado = await analizarEstadoDeCuenta(
+            accessToken,
+            email,
+            await getMyEmail(),
+            getSapRows,
+            getSatRows,
+          );
+          borrador = resultado.borrador;
+          conciliacion = resultado.conciliacion;
+        } catch {
+          // No bloquear el triaje si falla la lectura de adjuntos/SAP/SAT; el correo sigue en "requieren atención" sin borrador.
+        }
+      } else if (clasificacion?.necesita_detalle_pago && !(await threadHasDraft(accessToken, email.threadId))) {
         try {
           let proveedor = clasificacion.proveedor;
           let fechaPago = clasificacion.fecha_pago;
@@ -126,6 +235,7 @@ export async function POST() {
         importante,
         requiere_atencion: importante ? true : clasificacion?.requiere_atencion,
         borrador,
+        conciliacion,
       };
     }),
   );

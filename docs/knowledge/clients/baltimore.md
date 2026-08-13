@@ -35,6 +35,7 @@ Referencia interna para consultoría contable de Cristian con el cliente **Balti
 | factura_pagada | Confirmar en SAP si ya se pagó |
 | proxima_a_pagar | Consultar calendario de vencimientos |
 | nota_credito | Revisar y aplicar en SAP |
+| estado_cuenta_proveedor | Conciliar automáticamente contra SAP/SAT (ver abajo) y preparar borrador con tabla de hallazgos |
 | informativo | FYI — no requiere acción salvo archivo |
 
 ---
@@ -74,6 +75,7 @@ Referencia interna para consultoría contable de Cristian con el cliente **Balti
 
 - **Chat (este agente):** procedimientos, reglas, consultas sobre procesos de Baltimore. También responde preguntas de SAP en vivo (ver abajo).
 - **Bandeja Gmail:** `/consultoria/baltimore/gmail` — conectar Gmail, clasificar correos no leídos, marcar no relevantes como leídos. Para cualquier correo que en el fondo pida conciliar un pago o saber qué facturas lo integran (sin importar la categoría: solicitud_pago, mencion_directa, etc.), si se identifica proveedor y fecha, prepara automáticamente un borrador de respuesta con el desglose de facturas (sin enviarlo). Si el proveedor no calza por nombre, busca en el historial de correos del remitente qué facturas ha mencionado antes y las cruza contra SAP para inferir el proveedor real.
+- **Conciliación de estados de cuenta de proveedor:** cuando un correo trae el estado de cuenta del proveedor (adjunto Excel/PDF, o una imagen del detalle en el cuerpo) reclamando facturas pendientes, se extraen automáticamente con IA (Gemini lee PDF/imagen directamente; Excel se aplana a texto), se identifica el proveedor (por remitente, por nombre declarado, o cruzando los números de factura contra SAP), y se concilia cada factura contra SAP (¿existe?, ¿monto coincide?, ¿ya está pagada — con fecha y lote de pago?) y contra SAT (¿el CFDI está cancelado?). Se prepara un borrador de respuesta con tabla de hallazgos, copiando (Cc) a todos los que ya estaban en el correo original — nunca se envía automáticamente.
 - **Datos SAP en vivo:** siempre se lee el archivo `SAP*.xlsx` más reciente en la carpeta local **"Baltimore - SAP"**, sincronizada por Google Drive Desktop (no una copia congelada en el repo). Columnas clave: `Name` (proveedor), `Reference` (factura), `Total amount`/`Currency`, `WF Step Description` (estatus del flujo de aprobación; "WF finished" = terminado), `Clearing Date`/`Clearing Document` (cuándo y con qué documento se liquidó el pago).
 
 ---

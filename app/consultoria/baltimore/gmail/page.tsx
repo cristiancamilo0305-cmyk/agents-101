@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { GmailMessageSummary } from "@/lib/gmail";
 import type { EmailClassification } from "@/lib/tools/email-classifier";
+import type { InvoiceReconciliation } from "@/lib/tools/statement-reconciliation";
 
 type TriageResult = GmailMessageSummary &
   Partial<EmailClassification> & {
     importante?: boolean;
     borrador?: { id: string; preview: string };
+    conciliacion?: InvoiceReconciliation[];
   };
 
 const CATEGORY_STYLES: Record<
@@ -50,6 +52,12 @@ const CATEGORY_STYLES: Record<
     badge: "bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300",
     border: "border-l-teal-500",
     icon: "🧾",
+  },
+  estado_cuenta_proveedor: {
+    label: "Estado de cuenta",
+    badge: "bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300",
+    border: "border-l-indigo-500",
+    icon: "🧮",
   },
   informativo: {
     label: "Informativo",
@@ -225,6 +233,51 @@ export default function BaltimoreGmailPage() {
                         </div>
                         <p className="text-foreground/60">{r.from}</p>
                         <p className="mt-1 text-foreground/80">{r.resumen}</p>
+                        {r.conciliacion && r.conciliacion.length > 0 && (
+                          <div className="mt-2 overflow-x-auto rounded-md border border-foreground/10">
+                            <table className="w-full min-w-[640px] text-left text-xs">
+                              <thead className="bg-foreground/5">
+                                <tr>
+                                  <th className="px-2 py-1.5 font-medium">Factura</th>
+                                  <th className="px-2 py-1.5 font-medium">Monto declarado</th>
+                                  <th className="px-2 py-1.5 font-medium">En SAP</th>
+                                  <th className="px-2 py-1.5 font-medium">¿Monto coincide?</th>
+                                  <th className="px-2 py-1.5 font-medium">Estatus</th>
+                                  <th className="px-2 py-1.5 font-medium">SAT</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {r.conciliacion.map((c) => (
+                                  <tr key={c.numeroDeclarado} className="border-t border-foreground/10">
+                                    <td className="px-2 py-1.5">{c.numeroDeclarado}</td>
+                                    <td className="px-2 py-1.5">
+                                      {c.montoDeclarado.toLocaleString("es-MX", { minimumFractionDigits: 2 })}{" "}
+                                      {c.monedaDeclarada ?? ""}
+                                    </td>
+                                    <td className="px-2 py-1.5">{c.encontradaEnSap ? "Sí" : "No"}</td>
+                                    <td className="px-2 py-1.5">
+                                      {c.encontradaEnSap ? (c.montoCoincide ? "Sí" : "No") : "—"}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                      {!c.encontradaEnSap
+                                        ? "No encontrada"
+                                        : c.pagada
+                                          ? `Pagada (${c.fechaPago ?? "?"}, lote ${c.lotePago ?? "?"})`
+                                          : "Pendiente"}
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                      {c.canceladaEnSat ? (
+                                        <span className="font-medium text-red-600 dark:text-red-400">Cancelado</span>
+                                      ) : (
+                                        c.estatusSat || "—"
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                         {r.borrador && (
                           <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 dark:border-emerald-500/20 dark:bg-emerald-500/10">
                             <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
