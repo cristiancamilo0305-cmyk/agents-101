@@ -14,6 +14,14 @@ function normalizeRef(text: string): string {
   return text.replace(/\s+/g, "").toUpperCase();
 }
 
+/** Solo los dígitos, sin ceros a la izquierda — para cuando la misma factura queda capturada
+ *  con o sin prefijo de letras (ej. "FV004612" en el estado de cuenta vs "4612" en SAP). */
+function digitsOnly(text: string): string {
+  const digits = text.replace(/\D/g, "").replace(/^0+/, "");
+  return digits || "0";
+}
+const MIN_DIGITS_FOR_FALLBACK = 3;
+
 export type InvoiceReconciliation = {
   numeroDeclarado: string;
   montoDeclarado: number;
@@ -26,6 +34,7 @@ export type InvoiceReconciliation = {
   pagada: boolean;
   fechaPago?: string | null;
   lotePago?: string | null;
+  sapWfStep?: string;
   estatusSat?: string;
   canceladaEnSat: boolean;
   observacion: string;
@@ -35,7 +44,15 @@ const AMOUNT_TOLERANCE = 0.5;
 
 function findSapMatch(rows: SapRow[], numero: string, vendorHint: string | null): SapRow | undefined {
   const key = normalizeRef(numero);
-  const candidates = rows.filter((r) => normalizeRef(r.reference) === key);
+  let candidates = rows.filter((r) => normalizeRef(r.reference) === key);
+
+  if (candidates.length === 0) {
+    const numKey = digitsOnly(numero);
+    if (numKey.length >= MIN_DIGITS_FOR_FALLBACK) {
+      candidates = rows.filter((r) => r.reference && digitsOnly(r.reference) === numKey);
+    }
+  }
+
   if (candidates.length === 0) return undefined;
   if (!vendorHint) return candidates[0];
 
@@ -48,8 +65,15 @@ function findSapMatch(rows: SapRow[], numero: string, vendorHint: string | null)
 
 function findSatMatch(satRows: SatRow[], numero: string): SatRow | undefined {
   const key = normalizeRef(numero);
-  return satRows.find(
+  const exact = satRows.find(
     (r) => normalizeRef(r.folio) === key || (r.referencia && normalizeRef(r.referencia) === key),
+  );
+  if (exact) return exact;
+
+  const numKey = digitsOnly(numero);
+  if (numKey.length < MIN_DIGITS_FOR_FALLBACK) return undefined;
+  return satRows.find(
+    (r) => (r.folio && digitsOnly(r.folio) === numKey) || (r.referencia && digitsOnly(r.referencia) === numKey),
   );
 }
 
@@ -101,6 +125,7 @@ export function reconcileClaimedInvoices(
       pagada,
       fechaPago: sapMatch?.clearingDate,
       lotePago: sapMatch?.clearingDocument,
+      sapWfStep: sapMatch?.wfStep,
       estatusSat: satMatch?.estatusSat,
       canceladaEnSat,
       observacion: observacionPartes.join(" "),
@@ -109,6 +134,19 @@ export function reconcileClaimedInvoices(
 }
 
 const money = new Intl.NumberFormat("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Estatus a mostrar: "Pagada" si ya se liquidó; si no, el WF Step Description real de SAP (no un genérico "Pendiente"). */
+export function estatusLabel(r: InvoiceReconciliation): string {
+  if (!r.encontradaEnSap) return "No encontrada";
+  if (r.pagada) return "Pagada";
+  return r.sapWfStep || "Sin estatus en SAP";
+}
+
+/** Fecha y lote de pago cuando ya está pagada; "—" si no aplica (columna aparte para que sea visible de un vistazo). */
+export function pagoLabel(r: InvoiceReconciliation): string {
+  if (!r.encontradaEnSap || !r.pagada) return "—";
+  return `${r.fechaPago ?? "?"} · lote ${r.lotePago ?? "?"}`;
+}
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -122,14 +160,15 @@ export function formatStatementReconciliationEmail(
   vendorName: string | null,
   reconciliations: InvoiceReconciliation[],
 ): string {
-  const header = ["Factura", "Monto declarado", "En SAP", "Monto SAP", "¿Coincide?", "Estatus", "SAT"];
+  const header = ["Factura", "Monto declarado", "En SAP", "Monto SAP", "¿Coincide?", "Estatus", "Fecha de pago", "SAT"];
   const rows = reconciliations.map((r) => [
     r.numeroDeclarado,
     `${money.format(r.montoDeclarado)} ${r.monedaDeclarada ?? ""}`.trim(),
     r.encontradaEnSap ? "Sí" : "No",
     r.encontradaEnSap ? `${money.format(r.sapMonto ?? 0)} ${r.sapMoneda ?? ""}`.trim() : "—",
     r.encontradaEnSap ? (r.montoCoincide ? "Sí" : "No") : "—",
-    r.encontradaEnSap ? (r.pagada ? `Pagada (${r.fechaPago}, lote ${r.lotePago})` : "Pendiente") : "No encontrada",
+    estatusLabel(r),
+    pagoLabel(r),
     r.canceladaEnSat ? "CANCELADO" : r.estatusSat || "—",
   ]);
 
@@ -176,7 +215,7 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-const HTML_HEADER = ["Factura", "Monto declarado", "En SAP", "Monto SAP", "¿Coincide?", "Estatus", "SAT"];
+const HTML_HEADER = ["Factura", "Monto declarado", "En SAP", "Monto SAP", "¿Coincide?", "Estatus", "Fecha de pago", "SAT"];
 const TH_STYLE =
   "border:1px solid #333333;padding:6px 10px;background:#f2f2f2;text-align:left;font-weight:600;white-space:nowrap;";
 const TD_STYLE = "border:1px solid #333333;padding:6px 10px;text-align:left;white-space:nowrap;";
@@ -188,7 +227,8 @@ function statementRowCells(r: InvoiceReconciliation): string[] {
     r.encontradaEnSap ? "Sí" : "No",
     r.encontradaEnSap ? `${money.format(r.sapMonto ?? 0)} ${r.sapMoneda ?? ""}`.trim() : "—",
     r.encontradaEnSap ? (r.montoCoincide ? "Sí" : "No") : "—",
-    r.encontradaEnSap ? (r.pagada ? `Pagada (${r.fechaPago}, lote ${r.lotePago})` : "Pendiente") : "No encontrada",
+    estatusLabel(r),
+    pagoLabel(r),
     r.canceladaEnSat ? "CANCELADO" : r.estatusSat || "—",
   ];
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { GmailMessageSummary } from "@/lib/gmail";
 import type { EmailClassification } from "@/lib/tools/email-classifier";
-import type { InvoiceReconciliation } from "@/lib/tools/statement-reconciliation";
+import { estatusLabel, pagoLabel, type InvoiceReconciliation } from "@/lib/tools/statement-reconciliation";
 
 type TriageResult = GmailMessageSummary &
   Partial<EmailClassification> & {
@@ -243,6 +243,7 @@ export default function BaltimoreGmailPage() {
                                   <th className="px-2 py-1.5 font-medium">En SAP</th>
                                   <th className="px-2 py-1.5 font-medium">¿Monto coincide?</th>
                                   <th className="px-2 py-1.5 font-medium">Estatus</th>
+                                  <th className="px-2 py-1.5 font-medium">Fecha de pago</th>
                                   <th className="px-2 py-1.5 font-medium">SAT</th>
                                 </tr>
                               </thead>
@@ -258,13 +259,8 @@ export default function BaltimoreGmailPage() {
                                     <td className="px-2 py-1.5">
                                       {c.encontradaEnSap ? (c.montoCoincide ? "Sí" : "No") : "—"}
                                     </td>
-                                    <td className="px-2 py-1.5">
-                                      {!c.encontradaEnSap
-                                        ? "No encontrada"
-                                        : c.pagada
-                                          ? `Pagada (${c.fechaPago ?? "?"}, lote ${c.lotePago ?? "?"})`
-                                          : "Pendiente"}
-                                    </td>
+                                    <td className="px-2 py-1.5">{estatusLabel(c)}</td>
+                                    <td className="px-2 py-1.5">{pagoLabel(c)}</td>
                                     <td className="px-2 py-1.5">
                                       {c.canceladaEnSat ? (
                                         <span className="font-medium text-red-600 dark:text-red-400">Cancelado</span>
