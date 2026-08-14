@@ -279,3 +279,49 @@ export function formatPaymentSummaryEmail(
     "Cristian",
   ].join("\n");
 }
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const TH_STYLE =
+  "border:1px solid #333333;padding:6px 10px;background:#f2f2f2;text-align:left;font-weight:600;white-space:nowrap;";
+const TD_STYLE = "border:1px solid #333333;padding:6px 10px;text-align:left;white-space:nowrap;";
+
+/** Misma información que formatPaymentSummaryEmail, pero como tabla HTML real (bordes y márgenes visibles en Gmail). */
+export function formatPaymentSummaryEmailHtml(
+  vendorName: string,
+  clearingDate: string,
+  rows: SapRow[],
+): string {
+  const totals = new Map<string, number>();
+  for (const r of rows) totals.set(r.currency, (totals.get(r.currency) ?? 0) + r.totalAmount);
+
+  const headerRow = `<tr><th style="${TH_STYLE}">Factura</th><th style="${TH_STYLE}">Monto</th></tr>`;
+  const bodyRows = rows
+    .map(
+      (r) =>
+        `<tr><td style="${TD_STYLE}">${escapeHtml(r.reference)}</td><td style="${TD_STYLE}">${money.format(r.totalAmount)} ${escapeHtml(r.currency)}</td></tr>`,
+    )
+    .join("");
+  const table = `<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">${headerRow}${bodyRows}</table>`;
+
+  const totalesHtml = [...totals.entries()]
+    .map(([currency, amount]) => `<p><strong>Total ${escapeHtml(currency)}:</strong> ${money.format(amount)}</p>`)
+    .join("");
+
+  return [
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111111;">`,
+    `<p>${greeting()},</p>`,
+    `<p>Comparto detalle del pago realizado a ${escapeHtml(vendorName)} el ${clearingDate}:</p>`,
+    table,
+    totalesHtml,
+    `<p>Quedo atento a cualquier duda.</p>`,
+    `<p>Saludos,<br>Cristian</p>`,
+    `</div>`,
+  ].join("\n");
+}

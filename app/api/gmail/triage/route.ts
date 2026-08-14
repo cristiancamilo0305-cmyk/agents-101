@@ -15,6 +15,7 @@ import {
 import { classifyEmails, extractPaymentDetailsFromBody, hasImportantKeyword } from "@/lib/tools/email-classifier";
 import {
   formatPaymentSummaryEmail,
+  formatPaymentSummaryEmailHtml,
   getPaymentDetail,
   loadSapRows,
   resolveVendorByAmountAndDate,
@@ -219,9 +220,10 @@ export async function POST() {
             const resuelto = await resolvePayment(accessToken, email, proveedor, fechaPago, bodyText, rows);
 
             if (resuelto) {
-              const body = formatPaymentSummaryEmail(resuelto.proveedor, fechaPago, resuelto.matches);
-              const draft = await createReplyDraft(accessToken, email, body);
-              borrador = { id: draft.id, preview: body };
+              const preview = formatPaymentSummaryEmail(resuelto.proveedor, fechaPago, resuelto.matches);
+              const htmlBody = formatPaymentSummaryEmailHtml(resuelto.proveedor, fechaPago, resuelto.matches);
+              const draft = await createReplyDraft(accessToken, email, htmlBody, undefined, "text/html");
+              borrador = { id: draft.id, preview };
             }
           }
         } catch {
