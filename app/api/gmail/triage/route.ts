@@ -17,6 +17,7 @@ import {
   filterByVendor,
   formatPaymentSummaryEmail,
   formatPaymentSummaryEmailHtml,
+  getInvoicesDueByFriday,
   getPaymentDetail,
   loadSapRows,
   resolveVendorByAmountAndDate,
@@ -93,6 +94,14 @@ async function resolvePayment(
 
 const ATTACHMENT_MIME_ALLOW = /^(application\/pdf|application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml|text\/csv|image\/)/;
 
+/** Próximo viernes (hoy incluido si ya es viernes), en formato YYYY-MM-DD. */
+function nextFridayIso(): string {
+  const d = new Date();
+  const daysUntilFriday = (5 - d.getUTCDay() + 7) % 7;
+  d.setUTCDate(d.getUTCDate() + daysUntilFriday);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * Descarga y analiza el estado de cuenta de un proveedor (adjunto Excel/PDF o imagen en el
  * cuerpo), lo concilia contra SAP y SAT, y prepara un borrador de respuesta con la tabla de
@@ -143,10 +152,10 @@ async function analizarEstadoDeCuenta(
   let facturas = extraccion.facturas;
   if (facturas.length === 0) {
     // El proveedor pregunta por el pago sin citar facturas puntuales (ej. "no recibimos el pago,
-    // confirmen la nueva fecha") — si de todos modos se pudo identificar el proveedor, se usa
-    // directamente lo que SAP tiene abierto (sin Clearing Document) como base para responder.
+    // confirmen la nueva fecha") — si de todos modos se pudo identificar el proveedor, se responde
+    // solo con lo que corresponde al próximo viernes de pago (no todo el historial pendiente).
     if (!vendorHint) return {};
-    const pendientes = filterByVendor(rows, vendorHint).filter((r) => !r.clearingDocument);
+    const pendientes = getInvoicesDueByFriday(filterByVendor(rows, vendorHint), nextFridayIso());
     if (pendientes.length === 0) return {};
     facturas = pendientes.map((r) => ({ numero: r.reference, monto: r.totalAmount, moneda: r.currency }));
   }
