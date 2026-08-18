@@ -10,6 +10,7 @@ export type SapRow = {
   totalAmount: number;
   currency: string;
   wfStep: string;
+  purchaseOrder: string;
   documentDate: string | null;
   netDueDate: string | null;
   clearingDate: string | null;
@@ -23,6 +24,7 @@ const COLUMN_MAP: Record<string, keyof SapRow> = {
   "Total amount": "totalAmount",
   Currency: "currency",
   "WF Step Description": "wfStep",
+  "Purchase Order No.": "purchaseOrder",
   "Document Date": "documentDate",
   "Net Due Date": "netDueDate",
   "Clearing Date": "clearingDate",
@@ -97,6 +99,7 @@ export async function loadSapRows(): Promise<{ rows: SapRow[]; fileName: string 
       totalAmount: Number(get("totalAmount")) || 0,
       currency: cellText(get("currency")),
       wfStep: cellText(get("wfStep")),
+      purchaseOrder: cellText(get("purchaseOrder")),
       documentDate: toIsoDate(get("documentDate")),
       netDueDate: toIsoDate(get("netDueDate")),
       clearingDate: toIsoDate(get("clearingDate")),
@@ -227,6 +230,7 @@ export function summarizeInvoices(rows: SapRow[]) {
       monto: r.totalAmount,
       moneda: r.currency,
       estatus_wf: r.wfStep,
+      orden_compra: r.purchaseOrder,
       fecha_documento: r.documentDate,
       fecha_vencimiento: r.netDueDate,
       fecha_clearing: r.clearingDate,

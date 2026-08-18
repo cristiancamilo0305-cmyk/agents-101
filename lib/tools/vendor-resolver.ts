@@ -105,6 +105,22 @@ export function resolveVendorFromReferenceList(references: string[], rows: SapRo
 }
 
 /**
+ * Identifica al proveedor por número de orden de compra (PO) — útil cuando el correo trae la PO
+ * del caso (ej. en el asunto) pero el nombre del proveedor no calza directo con SAP.
+ */
+export function resolveVendorFromPurchaseOrder(purchaseOrder: string, rows: SapRow[]): string | null {
+  const key = purchaseOrder.replace(/\s+/g, "").toUpperCase();
+  const vendorCounts = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.purchaseOrder) continue;
+    if (row.purchaseOrder.replace(/\s+/g, "").toUpperCase() !== key) continue;
+    vendorCounts.set(row.vendorName, (vendorCounts.get(row.vendorName) ?? 0) + 1);
+  }
+  if (vendorCounts.size === 0) return null;
+  return [...vendorCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+/**
  * Cuando el proveedor no se encuentra por nombre (ej. el remitente escribe desde el dominio
  * de su empresa pero en SAP está registrado con otro nombre/razón social), busca en el
  * historial de correos de ese remitente qué números de factura ha mencionado antes y los

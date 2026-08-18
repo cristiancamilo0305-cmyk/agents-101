@@ -25,6 +25,7 @@ import { loadSatRows, type SatRow } from "@/lib/tools/sat-data";
 import {
   extractAmountCandidates,
   findVendorMentionInThread,
+  resolveVendorFromPurchaseOrder,
   resolveVendorFromReferenceList,
   resolveVendorFromSenderHistory,
   resolveVendorFromThreadReferences,
@@ -117,12 +118,15 @@ async function analizarEstadoDeCuenta(
 
   if (payloads.length === 0 && !bodyText.trim()) return {};
 
-  const extraccion = await extractStatementInvoices(bodyText, payloads);
+  const extraccion = await extractStatementInvoices(bodyText, payloads, email.subject);
   if (extraccion.facturas.length === 0) return {};
 
   const [rows, satRows] = await Promise.all([getSapRows(), getSatRows()]);
 
   let vendorHint = extraccion.proveedorDeclarado ?? null;
+  if (!vendorHint && extraccion.ordenCompraDeclarada) {
+    vendorHint = resolveVendorFromPurchaseOrder(extraccion.ordenCompraDeclarada, rows);
+  }
   if (!vendorHint) {
     vendorHint = resolveVendorFromReferenceList(
       extraccion.facturas.map((f) => f.numero),

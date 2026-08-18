@@ -11,6 +11,10 @@ const claimedInvoiceSchema = z.object({
   monto: z.number().describe("Monto total de la factura"),
   moneda: z.string().optional().describe("Moneda si se indica, ej. 'USD' o 'MXN'"),
   fecha: z.string().optional().describe("Fecha de la factura en YYYY-MM-DD si se indica"),
+  ordenCompra: z
+    .string()
+    .optional()
+    .describe("Número de orden de compra (PO / Purchase Order) asociado a esta factura, si se indica"),
 });
 
 const statementSchema = z.object({
@@ -18,6 +22,12 @@ const statementSchema = z.object({
     .string()
     .optional()
     .describe("Nombre del proveedor que envía el estado de cuenta, si se identifica"),
+  ordenCompraDeclarada: z
+    .string()
+    .optional()
+    .describe(
+      "Número de orden de compra (PO / Purchase Order) mencionado en el asunto o cuerpo del correo (no por factura), ej. 'PO4200030114'. Útil para identificar al proveedor cuando su nombre no calza directo con SAP.",
+    ),
   facturas: z.array(claimedInvoiceSchema),
 });
 
@@ -74,6 +84,7 @@ async function excelToText(data: Buffer): Promise<string> {
 export async function extractStatementInvoices(
   bodyText: string,
   attachments: AttachmentPayload[],
+  subject?: string,
 ): Promise<StatementExtraction> {
   const usable = attachments
     .filter((a) => a.data.byteLength > 0 && a.data.byteLength <= MAX_ATTACHMENT_BYTES)
@@ -91,11 +102,15 @@ export async function extractStatementInvoices(
   > = [
     {
       type: "text",
-      text: `Este es un estado de cuenta o relación de facturas pendientes de pago enviado por un proveedor a su cliente "Baltimore" (o "Baltimore Aircoil Company de México"). Extrae cada factura mencionada como pendiente de pago (número/folio, monto, moneda si se indica, fecha si se indica), y si es posible identifica el nombre del proveedor que envía el estado de cuenta.
+      text: `Este es un estado de cuenta o relación de facturas pendientes de pago enviado por un proveedor a su cliente "Baltimore" (o "Baltimore Aircoil Company de México"). Extrae cada factura mencionada como pendiente de pago (número/folio, monto, moneda si se indica, fecha si se indica, y número de orden de compra/PO si se indica para esa factura en particular), y si es posible identifica el nombre del proveedor que envía el estado de cuenta.
 
 IMPORTANTE sobre "proveedorDeclarado": es quien EMITE el estado de cuenta (a quién se le debe pagar), nunca "Baltimore" / "Baltimore Aircoil" — ese es el cliente que RECIBE el estado de cuenta y aparece mencionado en el encabezado o asunto, pero NUNCA es el proveedor. Si el único nombre de proveedor que identificas es una variante de "Baltimore", deja "proveedorDeclarado" vacío en vez de poner "Baltimore".
 
+También busca un número de orden de compra (PO / Purchase Order, ej. "PO4200030114" o "4200024079") mencionado en el asunto o en el cuerpo del correo — no por factura, sino refiriéndose a todo el caso/solicitud — y ponlo en "ordenCompraDeclarada". Sirve para identificar al proveedor cuando su nombre no calza directo con SAP.
+
 No inventes datos que no aparezcan.
+
+Asunto del correo: ${subject || "(sin asunto)"}
 
 Cuerpo del correo:
 ${bodyText || "(sin texto relevante en el cuerpo)"}`,
