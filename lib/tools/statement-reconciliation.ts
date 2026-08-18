@@ -45,6 +45,8 @@ export type InvoiceReconciliation = {
   fechaPago?: string | null;
   lotePago?: string | null;
   sapWfStep?: string;
+  fechaVencimiento?: string | null;
+  vencida: boolean;
   estatusSat?: string;
   canceladaEnSat: boolean;
   observacion: string;
@@ -117,11 +119,14 @@ export function reconcileClaimedInvoices(
   vendorHint: string | null,
   claimed: ClaimedInvoice[],
 ): InvoiceReconciliation[] {
+  const hoy = new Date().toISOString().slice(0, 10);
+
   return claimed.map((c) => {
     const sapMatch = findSapMatch(rows, c.numero, vendorHint);
     const satMatch = findSatMatch(satRows, c.numero, vendorHint);
     const pagada = Boolean(sapMatch?.clearingDocument);
     const canceladaEnSat = normalize(satMatch?.estatusSat ?? "") === "cancelado";
+    const vencida = Boolean(!pagada && sapMatch?.netDueDate && sapMatch.netDueDate < hoy);
 
     const montoCoincide = sapMatch ? Math.abs(sapMatch.totalAmount - c.monto) <= AMOUNT_TOLERANCE : undefined;
 
@@ -139,6 +144,7 @@ export function reconcileClaimedInvoices(
           ? `Ya pagada el ${sapMatch.clearingDate ?? "(fecha no registrada)"}, lote de pago ${sapMatch.clearingDocument}.`
           : `Pendiente de pago (estatus: ${sapMatch.wfStep || "sin estatus"}).`,
       );
+      if (vencida) observacionPartes.push(`⚠️ Vencida desde el ${sapMatch!.netDueDate}.`);
     }
     if (canceladaEnSat) observacionPartes.push("⚠️ CFDI aparece CANCELADO en SAT.");
 
@@ -155,6 +161,8 @@ export function reconcileClaimedInvoices(
       fechaPago: sapMatch?.clearingDate,
       lotePago: sapMatch?.clearingDocument,
       sapWfStep: sapMatch?.wfStep,
+      fechaVencimiento: sapMatch?.netDueDate,
+      vencida,
       estatusSat: satMatch?.estatusSat,
       canceladaEnSat,
       observacion: observacionPartes.join(" "),
@@ -164,11 +172,12 @@ export function reconcileClaimedInvoices(
 
 const money = new Intl.NumberFormat("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Estatus a mostrar: "Pagada" si ya se liquidó; si no, el WF Step Description real de SAP (no un genérico "Pendiente"). */
+/** Estatus a mostrar: "Pagada" si ya se liquidó; si no, el WF Step Description real de SAP (no un genérico "Pendiente"), marcando VENCIDA cuando ya pasó la fecha de vencimiento. */
 export function estatusLabel(r: InvoiceReconciliation): string {
   if (!r.encontradaEnSap) return "No encontrada";
   if (r.pagada) return "Pagada";
-  return r.sapWfStep || "Sin estatus en SAP";
+  const base = r.sapWfStep || "Sin estatus en SAP";
+  return r.vencida ? `${base} (VENCIDA)` : base;
 }
 
 /** Fecha y lote de pago cuando ya está pagada; "—" si no aplica (columna aparte para que sea visible de un vistazo). */
@@ -207,7 +216,7 @@ export function formatStatementReconciliationEmail(
   const separator = widths.map((w) => "-".repeat(w)).join("--+--");
 
   const discrepancias = reconciliations.filter(
-    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat,
+    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat || r.vencida,
   );
 
   const lines = [
@@ -271,7 +280,7 @@ export function formatStatementReconciliationEmailHtml(
   const bodyRows = reconciliations
     .map((r) => {
       const cells = statementRowCells(r).map((c) => `<td style="${TD_STYLE}">${escapeHtml(c)}</td>`);
-      const highlight = r.canceladaEnSat || r.montoCoincide === false || !r.encontradaEnSap;
+      const highlight = r.canceladaEnSat || r.montoCoincide === false || !r.encontradaEnSap || r.vencida;
       return `<tr${highlight ? ' style="background:#fff4f4;"' : ""}>${cells.join("")}</tr>`;
     })
     .join("");
@@ -279,7 +288,7 @@ export function formatStatementReconciliationEmailHtml(
   const table = `<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">${headerRow}${bodyRows}</table>`;
 
   const discrepancias = reconciliations.filter(
-    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat,
+    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat || r.vencida,
   );
 
   const discrepanciasHtml =
