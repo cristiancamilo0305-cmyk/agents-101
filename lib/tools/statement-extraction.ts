@@ -79,6 +79,10 @@ export async function extractStatementInvoices(
     .filter((a) => a.data.byteLength > 0 && a.data.byteLength <= MAX_ATTACHMENT_BYTES)
     .filter((a) => !isImage(a.mimeType) || a.data.byteLength >= MIN_IMAGE_BYTES)
     .filter((a) => isExcel(a.mimeType) || isPdf(a.mimeType) || isImage(a.mimeType))
+    // Excel/PDF primero: casi siempre son el estado de cuenta real, mientras que las imágenes
+    // adjuntas suelen ser banners/logos de firma de correo — no deben desplazar al archivo real
+    // cuando hay más adjuntos que el límite (ej. un correo con 10 imágenes de firma + 1 Excel).
+    .sort((a, b) => Number(isImage(a.mimeType)) - Number(isImage(b.mimeType)))
     .slice(0, MAX_ATTACHMENTS);
 
   const contentParts: Array<
