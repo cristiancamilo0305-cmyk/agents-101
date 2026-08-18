@@ -14,6 +14,7 @@ import {
 } from "@/lib/gmail";
 import { classifyEmails, extractPaymentDetailsFromBody, hasImportantKeyword } from "@/lib/tools/email-classifier";
 import {
+  filterByVendor,
   formatPaymentSummaryEmail,
   formatPaymentSummaryEmailHtml,
   getPaymentDetail,
@@ -119,7 +120,6 @@ async function analizarEstadoDeCuenta(
   if (payloads.length === 0 && !bodyText.trim()) return {};
 
   const extraccion = await extractStatementInvoices(bodyText, payloads, email.subject);
-  if (extraccion.facturas.length === 0) return {};
 
   const [rows, satRows] = await Promise.all([getSapRows(), getSatRows()]);
 
@@ -127,7 +127,7 @@ async function analizarEstadoDeCuenta(
   if (!vendorHint && extraccion.ordenCompraDeclarada) {
     vendorHint = resolveVendorFromPurchaseOrder(extraccion.ordenCompraDeclarada, rows);
   }
-  if (!vendorHint) {
+  if (!vendorHint && extraccion.facturas.length > 0) {
     vendorHint = resolveVendorFromReferenceList(
       extraccion.facturas.map((f) => f.numero),
       rows,
@@ -140,7 +140,18 @@ async function analizarEstadoDeCuenta(
     vendorHint = await resolveVendorFromSenderHistory(accessToken, email.from, rows);
   }
 
-  const conciliacion = reconcileClaimedInvoices(rows, satRows, vendorHint, extraccion.facturas);
+  let facturas = extraccion.facturas;
+  if (facturas.length === 0) {
+    // El proveedor pregunta por el pago sin citar facturas puntuales (ej. "no recibimos el pago,
+    // confirmen la nueva fecha") — si de todos modos se pudo identificar el proveedor, se usa
+    // directamente lo que SAP tiene abierto (sin Clearing Document) como base para responder.
+    if (!vendorHint) return {};
+    const pendientes = filterByVendor(rows, vendorHint).filter((r) => !r.clearingDocument);
+    if (pendientes.length === 0) return {};
+    facturas = pendientes.map((r) => ({ numero: r.reference, monto: r.totalAmount, moneda: r.currency }));
+  }
+
+  const conciliacion = reconcileClaimedInvoices(rows, satRows, vendorHint, facturas);
   const preview = formatStatementReconciliationEmail(vendorHint, conciliacion);
   const htmlBody = formatStatementReconciliationEmailHtml(vendorHint, conciliacion);
 
