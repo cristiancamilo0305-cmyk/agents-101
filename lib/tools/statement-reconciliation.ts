@@ -47,6 +47,7 @@ export type InvoiceReconciliation = {
   sapWfStep?: string;
   fechaVencimiento?: string | null;
   vencida: boolean;
+  proximoViernesPago?: string | null;
   estatusSat?: string;
   canceladaEnSat: boolean;
   observacion: string;
@@ -108,6 +109,32 @@ function findSatMatch(satRows: SatRow[], numero: string, vendorHint: string | nu
   return undefined;
 }
 
+function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** El viernes más próximo en o después de la fecha dada (si ya es viernes, se queda igual). */
+function nextFridayOnOrAfter(dateIso: string): string {
+  const d = new Date(`${dateIso}T00:00:00Z`);
+  const daysUntilFriday = (5 - d.getUTCDay() + 7) % 7;
+  d.setUTCDate(d.getUTCDate() + daysUntilFriday);
+  return toIsoDate(d);
+}
+
+/**
+ * Próximo viernes de pago en el que esta factura calificaría, siguiendo la misma regla del
+ * Payment List semanal (getInvoicesDueByFriday): sin liquidar + Net Due Date <= viernes + 1 día.
+ * Es la primera fecha de pago semanal en la que, si el proceso corre puntual, se incluiría.
+ */
+function proyectarViernesDePago(netDueDate: string | null | undefined, hoy: string): string | null {
+  if (!netDueDate) return null;
+  const limite = new Date(`${netDueDate}T00:00:00Z`);
+  limite.setUTCDate(limite.getUTCDate() - 1); // invertir "netDueDate <= viernes + 1" -> "viernes >= netDueDate - 1"
+  const earliestEligible = toIsoDate(limite);
+  const base = earliestEligible > hoy ? earliestEligible : hoy;
+  return nextFridayOnOrAfter(base);
+}
+
 /**
  * Compara cada factura declarada por el proveedor en su estado de cuenta contra el SAP y SAT
  * más recientes: existencia, coincidencia de monto, si ya está pagada (fecha + lote de pago), y
@@ -127,6 +154,7 @@ export function reconcileClaimedInvoices(
     const pagada = Boolean(sapMatch?.clearingDocument);
     const canceladaEnSat = normalize(satMatch?.estatusSat ?? "") === "cancelado";
     const vencida = Boolean(!pagada && sapMatch?.netDueDate && sapMatch.netDueDate < hoy);
+    const proximoViernesPago = !pagada ? proyectarViernesDePago(sapMatch?.netDueDate, hoy) : null;
 
     const montoCoincide = sapMatch ? Math.abs(sapMatch.totalAmount - c.monto) <= AMOUNT_TOLERANCE : undefined;
 
@@ -145,6 +173,9 @@ export function reconcileClaimedInvoices(
           : `Pendiente de pago (estatus: ${sapMatch.wfStep || "sin estatus"}).`,
       );
       if (vencida) observacionPartes.push(`⚠️ Vencida desde el ${sapMatch!.netDueDate}.`);
+      if (!pagada && proximoViernesPago) {
+        observacionPartes.push(`Próximo viernes de pago estimado: ${proximoViernesPago}.`);
+      }
     }
     if (canceladaEnSat) observacionPartes.push("⚠️ CFDI aparece CANCELADO en SAT.");
 
@@ -163,6 +194,7 @@ export function reconcileClaimedInvoices(
       sapWfStep: sapMatch?.wfStep,
       fechaVencimiento: sapMatch?.netDueDate,
       vencida,
+      proximoViernesPago,
       estatusSat: satMatch?.estatusSat,
       canceladaEnSat,
       observacion: observacionPartes.join(" "),
@@ -180,10 +212,14 @@ export function estatusLabel(r: InvoiceReconciliation): string {
   return r.vencida ? `${base} (VENCIDA)` : base;
 }
 
-/** Fecha y lote de pago cuando ya está pagada; "—" si no aplica (columna aparte para que sea visible de un vistazo). */
+/**
+ * Fecha y lote de pago cuando ya está pagada; si sigue pendiente, el próximo viernes de pago
+ * proyectado según la regla del Payment List semanal; "—" si no se encontró en SAP.
+ */
 export function pagoLabel(r: InvoiceReconciliation): string {
-  if (!r.encontradaEnSap || !r.pagada) return "—";
-  return `${r.fechaPago ?? "?"} · lote ${r.lotePago ?? "?"}`;
+  if (!r.encontradaEnSap) return "—";
+  if (r.pagada) return `${r.fechaPago ?? "?"} · lote ${r.lotePago ?? "?"}`;
+  return r.proximoViernesPago ? `Próx. viernes de pago: ${r.proximoViernesPago}` : "—";
 }
 
 function greeting(): string {
