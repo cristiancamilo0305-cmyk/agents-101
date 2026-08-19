@@ -164,24 +164,13 @@ export function reconcileClaimedInvoices(
 
     const montoCoincide = sapMatch ? Math.abs(sapMatch.totalAmount - c.monto) <= AMOUNT_TOLERANCE : undefined;
 
+    // Solo se explican diferencias reales — el estatus, si está vencida y la fecha de pago
+    // proyectada ya se ven directo en las columnas de la tabla, repetirlo abajo es redundante.
     const observacionPartes: string[] = [];
     if (!sapMatch) {
       observacionPartes.push("No se encontró esta factura en SAP.");
-    } else {
-      observacionPartes.push(
-        montoCoincide
-          ? "Monto coincide con SAP."
-          : `Monto declarado (${c.monto}) no coincide con SAP (${sapMatch.totalAmount}).`,
-      );
-      observacionPartes.push(
-        pagada
-          ? `Ya pagada el ${sapMatch.clearingDate ?? "(fecha no registrada)"}, lote de pago ${sapMatch.clearingDocument}.`
-          : `Pendiente de pago (estatus: ${sapMatch.wfStep || "sin estatus"}).`,
-      );
-      if (vencida) observacionPartes.push(`⚠️ Vencida desde el ${sapMatch!.netDueDate}.`);
-      if (!pagada && proximoViernesPago) {
-        observacionPartes.push(`Próximo viernes de pago estimado: ${proximoViernesPago}.`);
-      }
+    } else if (!montoCoincide) {
+      observacionPartes.push(`Monto declarado (${c.monto}) no coincide con SAP (${sapMatch.totalAmount}).`);
     }
     if (canceladaEnSat) observacionPartes.push("⚠️ CFDI aparece CANCELADO en SAT.");
 
@@ -258,7 +247,7 @@ export function formatStatementReconciliationEmail(
   const separator = widths.map((w) => "-".repeat(w)).join("--+--");
 
   const discrepancias = reconciliations.filter(
-    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat || r.vencida,
+    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat,
   );
 
   const lines = [
@@ -330,7 +319,7 @@ export function formatStatementReconciliationEmailHtml(
   const table = `<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">${headerRow}${bodyRows}</table>`;
 
   const discrepancias = reconciliations.filter(
-    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat || r.vencida,
+    (r) => !r.encontradaEnSap || r.montoCoincide === false || r.canceladaEnSat,
   );
 
   const discrepanciasHtml =
