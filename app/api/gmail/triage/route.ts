@@ -201,6 +201,12 @@ export async function POST() {
     return resolved;
   }
 
+  // Un mismo hilo puede tener varios correos sin leer (ej. un hilo viejo nunca marcado como
+  // leído) — sin este control, Promise.all los procesaría en paralelo y cada uno pasaría el
+  // threadHasDraft (que solo ve borradores ya guardados) antes de que cualquiera terminara,
+  // generando un borrador duplicado por cada mensaje del mismo hilo.
+  const hilosEnProceso = new Set<string>();
+
   const results = await Promise.all(
     emails.map(async (email) => {
       const clasificacion = clasificaciones.find((c) => c.id === email.id);
@@ -209,7 +215,8 @@ export async function POST() {
       let borrador: { id: string; preview: string } | undefined;
       let conciliacion: InvoiceReconciliation[] | undefined;
 
-      if (clasificacion?.categoria === "estado_cuenta_proveedor") {
+      if (clasificacion?.categoria === "estado_cuenta_proveedor" && !hilosEnProceso.has(email.threadId)) {
+        hilosEnProceso.add(email.threadId);
         try {
           const resultado = await analizarEstadoDeCuenta(
             accessToken,
@@ -223,8 +230,10 @@ export async function POST() {
         } catch {
           // No bloquear el triaje si falla la lectura de adjuntos/SAP/SAT; el correo sigue en "requieren atención" sin borrador.
         }
-      } else if (clasificacion?.necesita_detalle_pago && !(await threadHasDraft(accessToken, email.threadId))) {
+      } else if (clasificacion?.necesita_detalle_pago && !hilosEnProceso.has(email.threadId)) {
+        hilosEnProceso.add(email.threadId);
         try {
+          if (await threadHasDraft(accessToken, email.threadId)) throw new Error("ya tiene borrador");
           let proveedor = clasificacion.proveedor;
           let fechaPago = clasificacion.fecha_pago;
           let bodyText = "";
