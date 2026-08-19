@@ -69,6 +69,11 @@ function findSapMatch(rows: SapRow[], numero: string, vendorHint: string | null)
     !vendorKey || normalizeVendorName(r.vendorName).includes(vendorKey) || vendorKey.includes(normalizeVendorName(r.vendorName));
 
   const exact = rows.filter((r) => normalizeRef(r.reference) === key);
+  // Si la referencia exacta es única en todo SAP no hay nada que mezclar (a diferencia del
+  // fallback por solo-dígitos, una coincidencia exacta entre proveedores distintos es rarísima)
+  // — se usa aunque el nombre de proveedor extraído del correo no calce textualmente con el de
+  // SAP (ej. errores de transcripción de la IA, nombres truncados a 36 caracteres en SAP, etc.).
+  if (exact.length === 1) return exact[0];
   const exactForVendor = exact.filter(matchesVendor);
   if (exactForVendor.length > 0) return exactForVendor[0];
   if (!vendorKey && exact.length > 0) return exact[0];
@@ -94,6 +99,7 @@ function findSatMatch(satRows: SatRow[], numero: string, vendorHint: string | nu
     vendorKey.includes(normalizeVendorName(r.razonSocialEmisor));
 
   const exact = satRows.filter((r) => normalizeRef(r.folio) === key || (r.referencia && normalizeRef(r.referencia) === key));
+  if (exact.length === 1) return exact[0];
   const exactForVendor = exact.filter(matchesVendor);
   if (exactForVendor.length > 0) return exactForVendor[0];
   if (!vendorKey && exact.length > 0) return exact[0];
