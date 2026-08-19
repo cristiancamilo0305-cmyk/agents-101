@@ -27,6 +27,7 @@ import { loadSatRows, type SatRow } from "@/lib/tools/sat-data";
 import {
   extractAmountCandidates,
   findVendorMentionInThread,
+  resolveKnownAlias,
   resolveVendorFromPurchaseOrder,
   resolveVendorFromReferenceList,
   resolveVendorFromSenderHistory,
@@ -132,18 +133,26 @@ async function analizarEstadoDeCuenta(
 
   const [rows, satRows] = await Promise.all([getSapRows(), getSatRows()]);
 
-  // El cruce por número de factura contra SAP va primero: es un dato real, mientras que el
+  // Alias confirmados a mano (ej. "Razar Engineering Solutions" es el nombre comercial de
+  // "ALBERTO ISAAC RAMIREZ SANCHEZ", la razón social en SAP) — no comparten ni una palabra, así
+  // que ningún cruce por texto los conecta solo; se revisan primero por ser un hecho ya validado.
+  const senderLocalPart = extractEmail(email.from).split("@")[0];
+  let vendorHint =
+    resolveKnownAlias(extraccion.proveedorDeclarado ?? null) ??
+    resolveKnownAlias(extractEmail(email.from).split("@")[1]?.replace(/\.(com|mx)$/i, "") ?? null) ??
+    resolveKnownAlias(senderLocalPart);
+
+  // El cruce por número de factura contra SAP va después: es un dato real, mientras que el
   // nombre que declara el correo puede ser solo la marca/grupo del remitente (ej. "Del Bravo"
   // agrupa 7 razones sociales distintas en SAP — Grupo Aduanero del Bravo, Del Bravo Shipping,
   // Del Bravo Forwarding, etc., todas escribiendo desde @delbravo.com) y no calzar exacto con
   // la razón social real, aunque las facturas sí sean 100% identificables una por una.
-  let vendorHint =
-    extraccion.facturas.length > 0
-      ? resolveVendorFromReferenceList(
-          extraccion.facturas.map((f) => f.numero),
-          rows,
-        )
-      : null;
+  if (!vendorHint && extraccion.facturas.length > 0) {
+    vendorHint = resolveVendorFromReferenceList(
+      extraccion.facturas.map((f) => f.numero),
+      rows,
+    );
+  }
   if (!vendorHint) vendorHint = extraccion.proveedorDeclarado ?? null;
   if (!vendorHint && extraccion.ordenCompraDeclarada) {
     vendorHint = resolveVendorFromPurchaseOrder(extraccion.ordenCompraDeclarada, rows);

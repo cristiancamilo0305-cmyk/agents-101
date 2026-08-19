@@ -9,6 +9,22 @@ function normalize(text: string): string {
 }
 
 /**
+ * Nombres comerciales que no comparten ni una palabra con la raz\u00f3n social registrada en SAP,
+ * as\u00ed que ning\u00fan cruce por texto (declarado, remitente, menci\u00f3n en hilo) los conecta solo. Se
+ * mapean a mano seg\u00fan se van confirmando con Cristian.
+ */
+const VENDOR_ALIASES: Record<string, string> = {
+  "razar engineering solutions": "ALBERTO ISAAC RAMIREZ SANCHEZ",
+  razar: "ALBERTO ISAAC RAMIREZ SANCHEZ",
+};
+
+/** Si el nombre (o el que ya se resolvi\u00f3) tiene un alias conocido, devuelve la raz\u00f3n social real de SAP. */
+export function resolveKnownAlias(name: string | null): string | null {
+  if (!name) return null;
+  return VENDOR_ALIASES[normalize(name).trim()] ?? null;
+}
+
+/**
  * Quita direcciones postales, montos y fechas para que sus números no se confundan con
  * facturas: "CP 65580", "#2005", "Av. X", "Col. Y", "$4,672.32", "7/30/2026", años sueltos.
  */
