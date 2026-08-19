@@ -132,15 +132,21 @@ async function analizarEstadoDeCuenta(
 
   const [rows, satRows] = await Promise.all([getSapRows(), getSatRows()]);
 
-  let vendorHint = extraccion.proveedorDeclarado ?? null;
+  // El cruce por número de factura contra SAP va primero: es un dato real, mientras que el
+  // nombre que declara el correo puede ser solo la marca/grupo del remitente (ej. "Del Bravo"
+  // agrupa 7 razones sociales distintas en SAP — Grupo Aduanero del Bravo, Del Bravo Shipping,
+  // Del Bravo Forwarding, etc., todas escribiendo desde @delbravo.com) y no calzar exacto con
+  // la razón social real, aunque las facturas sí sean 100% identificables una por una.
+  let vendorHint =
+    extraccion.facturas.length > 0
+      ? resolveVendorFromReferenceList(
+          extraccion.facturas.map((f) => f.numero),
+          rows,
+        )
+      : null;
+  if (!vendorHint) vendorHint = extraccion.proveedorDeclarado ?? null;
   if (!vendorHint && extraccion.ordenCompraDeclarada) {
     vendorHint = resolveVendorFromPurchaseOrder(extraccion.ordenCompraDeclarada, rows);
-  }
-  if (!vendorHint && extraccion.facturas.length > 0) {
-    vendorHint = resolveVendorFromReferenceList(
-      extraccion.facturas.map((f) => f.numero),
-      rows,
-    );
   }
   if (!vendorHint) {
     vendorHint = await findVendorMentionInThread(accessToken, email.threadId, rows);
