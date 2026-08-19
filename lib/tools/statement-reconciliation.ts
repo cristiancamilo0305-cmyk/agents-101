@@ -224,6 +224,16 @@ function greeting(): string {
   return "Buenas noches";
 }
 
+const WF_FINISHED_NOTE =
+  'Nota: solo se programan para pago las facturas con estatus "WF finished", ya que son las que ya completaron su proceso de liberación/aprobación. Las que muestran otro estatus (ej. "Factual Verification", "Park SAP document") siguen en revisión y su fecha de pago queda sujeta a que se liberen primero.';
+
+/** true si hay alguna factura pendiente (no pagada) cuyo estatus todavía no es "WF finished" — ahí aplica la nota de liberación. */
+function tieneFacturasSinLiberar(reconciliations: InvoiceReconciliation[]): boolean {
+  return reconciliations.some(
+    (r) => r.encontradaEnSap && !r.pagada && normalize(r.sapWfStep ?? "") !== "wf finished",
+  );
+}
+
 /** Cuerpo de correo (texto plano, con tabla alineada) para responder un estado de cuenta con el resultado de la conciliación. */
 export function formatStatementReconciliationEmail(
   vendorName: string | null,
@@ -269,6 +279,10 @@ export function formatStatementReconciliationEmail(
     );
   } else {
     lines.push("Todas las facturas coinciden con nuestros registros.", "");
+  }
+
+  if (tieneFacturasSinLiberar(reconciliations)) {
+    lines.push(WF_FINISHED_NOTE, "");
   }
 
   lines.push("Quedamos atentos a cualquier duda.", "", "Saludos,", "Cristian");
@@ -329,12 +343,17 @@ export function formatStatementReconciliationEmailHtml(
           .join("")}</ul>`
       : `<p>Todas las facturas coinciden con nuestros registros.</p>`;
 
+  const notaLiberacionHtml = tieneFacturasSinLiberar(reconciliations)
+    ? `<p><em>${escapeHtml(WF_FINISHED_NOTE)}</em></p>`
+    : "";
+
   return [
     `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111111;">`,
     `<p>${greeting()},</p>`,
     `<p>Revisamos el estado de cuenta${vendorName ? ` de ${escapeHtml(vendorName)}` : ""} contra nuestros registros en SAP y SAT. Detalle:</p>`,
     table,
     discrepanciasHtml,
+    notaLiberacionHtml,
     `<p>Quedamos atentos a cualquier duda.</p>`,
     `<p>Saludos,<br>Cristian</p>`,
     `</div>`,
