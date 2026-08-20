@@ -329,3 +329,81 @@ export function formatPaymentSummaryEmailHtml(
     `</div>`,
   ].join("\n");
 }
+
+export type MultiPaymentEntry = {
+  fecha: string;
+  montoDeclarado: number;
+  monedaDeclarada?: string;
+  facturas: SapRow[];
+  totalSap: number;
+  monedaSap?: string;
+  coincide: boolean;
+};
+
+/** Para cada fecha/importe que el proveedor declara, busca en SAP las facturas liquidadas ese día y compara el total. */
+export function buildMultiPaymentDetail(
+  rows: SapRow[],
+  vendorQuery: string,
+  pagos: { fecha: string; monto: number; moneda?: string }[],
+): MultiPaymentEntry[] {
+  return pagos.map((p) => {
+    const facturas = getPaymentDetail(rows, vendorQuery, p.fecha);
+    const monedaSap = facturas[0]?.currency;
+    const totalSap = facturas.reduce((sum, r) => (r.currency === monedaSap ? sum + r.totalAmount : sum), 0);
+    const coincide = facturas.length > 0 && Math.abs(totalSap - p.monto) <= 0.5;
+    return { fecha: p.fecha, montoDeclarado: p.monto, monedaDeclarada: p.moneda, facturas, totalSap, monedaSap, coincide };
+  });
+}
+
+/** Cuerpo de correo (texto plano) con el desglose de facturas de VARIOS pagos, uno por fecha declarada. */
+export function formatMultiPaymentDetailEmail(vendorName: string, entries: MultiPaymentEntry[]): string {
+  const lines = [`${greeting()},`, "", `Comparto el desglose de facturas que integran cada pago realizado a ${vendorName}:`, ""];
+
+  for (const e of entries) {
+    lines.push(`Pago del ${e.fecha} — declarado: ${money.format(e.montoDeclarado)} ${e.monedaDeclarada ?? ""}`.trim());
+    if (e.facturas.length === 0) {
+      lines.push("- No se encontraron facturas en SAP liquidadas (Clearing Date) ese día para este proveedor.");
+    } else {
+      for (const f of e.facturas) lines.push(`- Factura ${f.reference}: ${money.format(f.totalAmount)} ${f.currency}`);
+      lines.push(
+        `Total SAP: ${money.format(e.totalSap)} ${e.monedaSap ?? ""}${e.coincide ? "" : " ⚠️ no coincide con el monto declarado"}`.trim(),
+      );
+    }
+    lines.push("");
+  }
+
+  lines.push("Quedo atento a cualquier duda.", "", "Saludos,", "Cristian");
+  return lines.join("\n");
+}
+
+/** Misma información que formatMultiPaymentDetailEmail, pero como HTML con una tabla por fecha. */
+export function formatMultiPaymentDetailEmailHtml(vendorName: string, entries: MultiPaymentEntry[]): string {
+  const sections = entries
+    .map((e) => {
+      const heading = `<p><strong>Pago del ${e.fecha}</strong> — declarado: ${money.format(e.montoDeclarado)} ${escapeHtml(e.monedaDeclarada ?? "")}</p>`;
+      if (e.facturas.length === 0) {
+        return `${heading}<p>No se encontraron facturas en SAP liquidadas (Clearing Date) ese día para este proveedor.</p>`;
+      }
+      const headerRow = `<tr><th style="${TH_STYLE}">Factura</th><th style="${TH_STYLE}">Monto</th></tr>`;
+      const bodyRows = e.facturas
+        .map(
+          (f) =>
+            `<tr><td style="${TD_STYLE}">${escapeHtml(f.reference)}</td><td style="${TD_STYLE}">${money.format(f.totalAmount)} ${escapeHtml(f.currency)}</td></tr>`,
+        )
+        .join("");
+      const table = `<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:13px;">${headerRow}${bodyRows}</table>`;
+      const totalLine = `<p><strong>Total SAP:</strong> ${money.format(e.totalSap)} ${escapeHtml(e.monedaSap ?? "")}${e.coincide ? "" : " ⚠️ no coincide con el monto declarado"}</p>`;
+      return `${heading}${table}${totalLine}`;
+    })
+    .join("<hr style=\"border:none;border-top:1px solid #ddd;margin:16px 0;\">");
+
+  return [
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111111;">`,
+    `<p>${greeting()},</p>`,
+    `<p>Comparto el desglose de facturas que integran cada pago realizado a ${escapeHtml(vendorName)}:</p>`,
+    sections,
+    `<p>Quedo atento a cualquier duda.</p>`,
+    `<p>Saludos,<br>Cristian</p>`,
+    `</div>`,
+  ].join("\n");
+}

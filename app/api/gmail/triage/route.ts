@@ -12,9 +12,17 @@ import {
   listUnreadMessages,
   threadHasDraft,
 } from "@/lib/gmail";
-import { classifyEmails, extractPaymentDetailsFromBody, hasImportantKeyword } from "@/lib/tools/email-classifier";
 import {
+  classifyEmails,
+  extractMultiplePaymentDates,
+  extractPaymentDetailsFromBody,
+  hasImportantKeyword,
+} from "@/lib/tools/email-classifier";
+import {
+  buildMultiPaymentDetail,
   filterByVendor,
+  formatMultiPaymentDetailEmail,
+  formatMultiPaymentDetailEmailHtml,
   formatPaymentSummaryEmail,
   formatPaymentSummaryEmailHtml,
   getInvoicesDueByFriday,
@@ -88,6 +96,38 @@ async function resolvePayment(
       const matches = getPaymentDetail(rows, porHistorialRemitente, fechaPago);
       if (matches.length > 0) return { proveedor: porHistorialRemitente, matches };
     }
+  }
+
+  return null;
+}
+
+/** Misma cadena de respaldo que resolvePayment, pero para cuando hay varias fechas de pago declaradas en un solo correo. */
+async function resolveVendorForMultiplePayments(
+  accessToken: string,
+  email: GmailMessageSummary,
+  proveedorSugerido: string | undefined,
+  pagos: { fecha: string; monto: number; moneda?: string }[],
+  rows: SapRow[],
+): Promise<string | null> {
+  if (proveedorSugerido) {
+    const prueba = buildMultiPaymentDetail(rows, proveedorSugerido, pagos);
+    if (prueba.some((e) => e.facturas.length > 0)) return proveedorSugerido;
+  }
+
+  for (const pago of pagos) {
+    const porMonto = resolveVendorByAmountAndDate(rows, pago.monto, pago.fecha);
+    if (porMonto) return porMonto;
+  }
+
+  const mencionado = await findVendorMentionInThread(accessToken, email.threadId, rows);
+  if (mencionado) return mencionado;
+
+  const porReferenciaHilo = await resolveVendorFromThreadReferences(accessToken, email.threadId, rows);
+  if (porReferenciaHilo) return porReferenciaHilo;
+
+  if (!/@baltimoreaircoil\.com$/i.test(extractEmail(email.from))) {
+    const porHistorialRemitente = await resolveVendorFromSenderHistory(accessToken, email.from, rows);
+    if (porHistorialRemitente) return porHistorialRemitente;
   }
 
   return null;
@@ -251,19 +291,39 @@ export async function POST() {
           if (await threadHasDraft(accessToken, email.threadId)) throw new Error("ya tiene borrador");
           let proveedor = clasificacion.proveedor;
           let fechaPago = clasificacion.fecha_pago;
-          let bodyText = "";
+          const bodyText = await getMessageBody(accessToken, email.id);
+
+          // Algunos correos piden el desglose de VARIOS pagos a la vez (tabla de fecha + importe),
+          // no solo uno — se intenta primero esta ruta; si no aplica, sigue el flujo de un solo pago.
+          const multi = await extractMultiplePaymentDates(email, bodyText);
+          if (multi.pagos.length >= 2) {
+            const rows = await getSapRows();
+            const vendorMulti =
+              multi.proveedor ||
+              proveedor ||
+              (await resolveVendorForMultiplePayments(accessToken, email, multi.proveedor || proveedor, multi.pagos, rows));
+
+            if (vendorMulti) {
+              const entries = buildMultiPaymentDetail(rows, vendorMulti, multi.pagos);
+              if (entries.some((e) => e.facturas.length > 0)) {
+                const preview = formatMultiPaymentDetailEmail(vendorMulti, entries);
+                const htmlBody = formatMultiPaymentDetailEmailHtml(vendorMulti, entries);
+                const draft = await createReplyDraft(accessToken, email, htmlBody, undefined, "text/html");
+                borrador = { id: draft.id, preview };
+              }
+            }
+          }
 
           // El snippet corto de Gmail a veces no alcanza (ej. avisos bancarios SPEI donde el
           // monto/fecha reales están más abajo en el cuerpo) — si falta la fecha, se reintenta
           // con el correo completo.
-          if (!fechaPago) {
-            bodyText = await getMessageBody(accessToken, email.id);
+          if (!borrador && !fechaPago) {
             const enriquecido = await extractPaymentDetailsFromBody(email, bodyText);
             proveedor = proveedor || enriquecido.proveedor;
             fechaPago = fechaPago || enriquecido.fecha_pago;
           }
 
-          if (fechaPago) {
+          if (!borrador && fechaPago) {
             const rows = await getSapRows();
             const resuelto = await resolvePayment(accessToken, email, proveedor, fechaPago, bodyText, rows);
 

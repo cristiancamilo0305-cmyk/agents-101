@@ -155,3 +155,50 @@ ${bodyText}`,
 
   return output;
 }
+
+const multiPaymentDatesSchema = z.object({
+  proveedor: z
+    .string()
+    .optional()
+    .describe(
+      "Proveedor externo (tercero) al que corresponden los pagos. Nunca 'Baltimore Aircoil' — esa es la empresa cliente, no un proveedor.",
+    ),
+  pagos: z
+    .array(
+      z.object({
+        fecha: z.string().describe("Fecha del pago en formato YYYY-MM-DD"),
+        monto: z.number().describe("Importe total de ese pago"),
+        moneda: z.string().optional().describe("Moneda si se indica, ej. 'MXN' o 'USD'"),
+      }),
+    )
+    .describe("Cada fecha/importe de pago que el proveedor menciona, tal como aparecen en su tabla o lista"),
+});
+
+/**
+ * Cuando el proveedor pide el desglose de VARIOS pagos ya recibidos (una tabla de fecha+importe,
+ * no un solo pago), extrae cada fecha/monto individual para poder resolver cada uno por separado.
+ */
+export async function extractMultiplePaymentDates(
+  email: Pick<GmailMessageSummary, "from" | "subject" | "date">,
+  bodyText: string,
+): Promise<{ proveedor?: string; pagos: { fecha: string; monto: number; moneda?: string }[] }> {
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  const { output } = await generateText({
+    model: google("gemini-3.5-flash-lite"),
+    output: Output.object({ schema: multiPaymentDatesSchema }),
+    prompt: `Eres el asistente de Cristian, contador de Baltimore. Este correo de un proveedor pide el desglose/soporte de varios pagos que ya recibió, listados como una tabla o lista de fecha + importe (ej. "Fecha Pago | Importe"). Extrae cada fila: fecha (YYYY-MM-DD) y monto. También el proveedor si se identifica (nunca "Baltimore Aircoil").
+
+No inventes filas que no aparezcan. Si solo hay un pago, igual regrésalo como lista de un elemento.
+
+De: ${email.from}
+Fecha del correo: ${email.date}
+Asunto: ${email.subject}
+Hoy: ${hoy}
+
+Cuerpo completo:
+${bodyText}`,
+  });
+
+  return output;
+}
